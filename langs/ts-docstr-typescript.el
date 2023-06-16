@@ -64,18 +64,33 @@
   :group 'ts-docstr)
 
 ;;;###autoload
+;; (defun ts-docstr-typescript-activate ()
+;;   "Return t if we are able to add document string at this point."
+;;   (ts-docstr-c-like-narrow-region
+;;     (let* ((nodes (ts-docstr-grab-nodes-in-range '(class_declaration
+;;                                                    interface_declaration
+;;                                                    enum_declaration
+;;                                                    function_declaration
+;;                                                    method_definition))))
+;;       (cond ((zerop (length nodes))
+;;              (ts-docstr-log "No declaration found"))
+;;             ((<= 2 (length nodes))
+;;              (ts-docstr-log "Multiple declarations are invalid, %s" (length nodes)))
+;;             (t (nth 0 nodes))))))
+
+;;;###autoload
 (defun ts-docstr-typescript-activate ()
   "Return t if we are able to add document string at this point."
   (ts-docstr-c-like-narrow-region
-    (let* ((nodes (ts-docstr-grab-nodes-in-range '(class_declaration
-                                                   interface_declaration
-                                                   enum_declaration
-                                                   function_declaration
-                                                   method_definition))))
+    (let* ((nodes (treesit-docstr-grap-nodes-in-range '(class_declaration
+                                                        interface_declaration
+                                                        enum_declaration
+                                                        function_declaration
+                                                        method_definition))))
       (cond ((zerop (length nodes))
-             (ts-docstr-log "No declaration found"))
+             (treesit-docstr-log "No declaration found"))
             ((<= 2 (length nodes))
-             (ts-docstr-log "Multiple declarations are invalid, %s" (length nodes)))
+             (treesit-docstr-log "Multiple declarations are invalid, %s" (length nodes)))
             (t (nth 0 nodes))))))
 
 ;; NOTE: This is generally not necessary but kinda useful for user.

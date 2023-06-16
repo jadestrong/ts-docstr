@@ -39,7 +39,8 @@
 (require 'msgu)
 (require 'refine)
 (require 's)
-(require 'tree-sitter)
+(require 'treesit)
+;; (require 'tree-sitter)
 
 (defgroup ts-docstr nil
   "A document string minor mode using tree-sitter."
@@ -151,11 +152,15 @@
 ;; (@* "Logger" )
 ;;
 
-(defun ts-docstr-log (fmt &rest args)
-  "Log a message."
-  (when (memq this-command '(ts-docstr-at-point))
-    (apply #'user-error fmt args)))
+;; (defun ts-docstr-log (fmt &rest args)
+;;   "Log a message."
+;;   (when (memq this-command '(ts-docstr-at-point))
+;;     (apply #'user-error fmt args)))
 
+(defun treesit-docstr-log (fmt &rest args)
+  "Log a message."
+  (when (memq this-command '(treesit-docstr-at-point))
+    (apply #'user-error fmt args)))
 ;;
 ;; (@* "Util" )
 ;;
@@ -177,36 +182,80 @@
        (progn ,@body)
      (user-error "Ignored, tree-sitter-mode is not enabled in the current buffer")))
 
+(defmacro treesit-docstr--ensure-ts (&rest body)
+  "Run BODY only if `treesit' is enabled."
+  (declare (indent 0))
+  `(if (car-safe (treesit-parser-list))
+       (progn ,@body)
+     (user-error "Ignored, no correspond mode is not enabled in the current buffer")))
+
 (defun ts-docstr-leaf-p (node)
   "Return t if NODE is leaf node."
   (zerop (tsc-count-children node)))
 
-(defun ts-docstr-grab-nodes (nodes &optional node)
-  "Grab a list NODES from current buffer.
+;; (defun ts-docstr-grab-nodes (nodes &optional node)
+;;   "Grab a list NODES from current buffer.
+
+;; You can pass in NODE to start the captures from that node; default will use the
+;; node from the root."
+;;   (when-let* ((node (or node (tsc-root-node tree-sitter-tree)))
+;;               (patterns (seq-mapcat (lambda (type) `(,(list type) @name)) nodes 'vector))
+;;               (query (ignore-errors
+;;                        (tsc-make-query tree-sitter-language patterns)))
+;;               (found-nodes (tsc-query-captures query node #'ignore)))
+;;     (mapcar #'cdr found-nodes)))
+
+(defun treesit-docstr-grab-node (nodes &optional node)
+  "Grad a list NODES from current buffer.
 
 You can pass in NODE to start the captures from that node; default will use the
 node from the root."
-  (when-let* ((node (or node (tsc-root-node tree-sitter-tree)))
-              (patterns (seq-mapcat (lambda (type) `(,(list type) @name)) nodes 'vector))
-              (query (ignore-errors
-                       (tsc-make-query tree-sitter-language patterns)))
-              (found-nodes (tsc-query-captures query node #'ignore)))
-    (mapcar #'cdr found-nodes)))
+  (when-let* ((lang (car-safe (treesit-parser-list)))
+              (language (treesit-parser-language lang))
+              (node (or node (treesit-buffer-root-node)))
+              (patterns `(,(seq-mapcat (lambda (type) `(,(list type) @name)) nodes 'vector)))
+              (query (treesit-query-compile language patterns)))
+    (message "patterns %s" (treesit-query-p patterns))
+    (message "node %s" node)
+    (message "query %s" query)
+    (message "result %s" (treesit-query-capture (treesit-buffer-root-node) "(function_declaration)"))
+    ;; (treesit-query-validate (treesit-node-language node) query)
+    (when-let* ((found-nodes (treesit-query-capture node query)))
+      (mapcar #'cdr found-nodes))))
 
-(defun ts-docstr-grab-nodes-in-range (nodes &optional inner beg end)
+;; (defun ts-docstr-grab-nodes-in-range (nodes &optional inner beg end)
+;;   "Grab a list of NODES in range from BEG to END."
+;;   (when-let ((beg (or beg (point-min))) (end (or end (point-max)))
+;;              (nodes (ts-docstr-grab-nodes nodes)))
+;;     (cl-remove-if-not (lambda (node)
+;;                         (let ((node-beg (tsc-node-start-position node))
+;;                               (node-end (tsc-node-end-position node)))
+;;                           ;; Make sure the node is overlapped, but not exceeded
+;;                           (if inner
+;;                               (and (<= node-beg beg)
+;;                                    (<= end node-end))
+;;                             (and (<= beg node-beg)
+;;                                  (<= node-beg end)))))
+;;                       nodes)))
+
+(defun treesit-docstr-grap-nodes-in-range (nodes &optional inner beg end)
   "Grab a list of NODES in range from BEG to END."
+    ;; (message "beg %s end %s nodes %s" beg end nodes)
   (when-let ((beg (or beg (point-min))) (end (or end (point-max)))
-             (nodes (ts-docstr-grab-nodes nodes)))
-    (cl-remove-if-not (lambda (node)
-                        (let ((node-beg (tsc-node-start-position node))
-                              (node-end (tsc-node-end-position node)))
-                          ;; Make sure the node is overlapped, but not exceeded
-                          (if inner
-                              (and (<= node-beg beg)
-                                   (<= end node-end))
-                            (and (<= beg node-beg)
-                                 (<= node-beg end)))))
-                      nodes)))
+             (nodes (treesit-docstr-grab-node nodes)))
+    (message "beg %s end %s nodes %s" beg end nodes)
+    ;; (cl-remove-if-not (lambda (node)
+    ;;                     (let ((node-beg (treesit-node-start node))
+    ;;                           (node-end (treesit-node-end node)))
+    ;;                       ;; Make sure the node is overlapped, but node exceeded
+    ;;                       (if inner
+    ;;                           (and (<= node-beg beg)
+    ;;                                (<= end node-end))
+    ;;                         (and (<= beg node-beg)
+    ;;                              (<= node-beg end)))))
+    ;;                   nodes)
+    nodes
+    ))
 
 (defun ts-docstr-get-next-sibling (node type)
   "Like function `tsc-get-next-sibling' but with TYPE (string)."
@@ -263,35 +312,50 @@ node from the root."
 ;; (@* "Core" )
 ;;
 
-(defcustom ts-docstr-module-alist
-  `((c-mode          . ts-docstr-c)
-    (c++-mode        . ts-docstr-c++)
-    (csharp-mode     . ts-docstr-csharp)
-    (go-mode         . ts-docstr-go)
-    (java-mode       . ts-docstr-java)
-    (javascript-mode . ts-docstr-js)
-    (js-mode         . ts-docstr-js)
-    (js2-mode        . ts-docstr-js)
-    (js3-mode        . ts-docstr-js)
-    (lua-mode        . ts-docstr-lua)
-    (php-mode        . ts-docstr-php)
-    (python-mode     . ts-docstr-python)
-    (ruby-mode       . ts-docstr-ruby)
-    (rust-mode       . ts-docstr-rust)
-    (scala-mode      . ts-docstr-scala)
-    (swift-mode      . ts-docstr-swift)
-    (typescript-mode . ts-docstr-typescript))
+;; (defcustom ts-docstr-module-alist
+;;   `((c-mode          . ts-docstr-c)
+;;     (c++-mode        . ts-docstr-c++)
+;;     (csharp-mode     . ts-docstr-csharp)
+;;     (go-mode         . ts-docstr-go)
+;;     (java-mode       . ts-docstr-java)
+;;     (javascript-mode . ts-docstr-js)
+;;     (js-mode         . ts-docstr-js)
+;;     (js2-mode        . ts-docstr-js)
+;;     (js3-mode        . ts-docstr-js)
+;;     (lua-mode        . ts-docstr-lua)
+;;     (php-mode        . ts-docstr-php)
+;;     (python-mode     . ts-docstr-python)
+;;     (ruby-mode       . ts-docstr-ruby)
+;;     (rust-mode       . ts-docstr-rust)
+;;     (scala-mode      . ts-docstr-scala)
+;;     (swift-mode      . ts-docstr-swift)
+;;     (typescript-mode . ts-docstr-typescript))
+;;   "Module alist."
+;;   :type '(alist key-type symbol)
+;;   :group 'ts-docstr)
+
+(defcustom treesit-docstr-module-alist
+  `((tsx-ts-mode            . ts-docstr-typescript))
   "Module alist."
   :type '(alist key-type symbol)
-  :group 'ts-docstr)
+  :group 'treesit-docstr)
 
-(defun ts-docstr-module ()
+;; (defun ts-docstr-module ()
+;;   "Return current module name."
+;;   (cdr (assq major-mode ts-docstr-module-alist)))
+
+(defun treesit-docstr-module ()
   "Return current module name."
-  (cdr (assq major-mode ts-docstr-module-alist)))
+  (cdr (assq major-mode treesit-docstr-module-alist)))
 
-(defun ts-docstr--require-module ()
+;; (defun ts-docstr--require-module ()
+;;   "Try to require module."
+;;   (when-let ((module (ts-docstr-module)))
+;;     (require module nil t)))
+
+(defun treesit-docstr--require-module ()
   "Try to require module."
-  (when-let ((module (ts-docstr-module)))
+  (when-let ((module (treesit-docstr-module)))
     (require module nil t)))
 
 (defun ts-docstr--module-funcall (module event &rest args)
@@ -311,27 +375,50 @@ node from the root."
     (apply #'run-hook-with-args (append (list after-module-hook) args))
     result))
 
-(defun ts-docstr-activatable-p (&optional module)
+;; (defun ts-docstr-activatable-p (&optional module)
+;;   "Return detected node, this means we can insert docstring at point.
+
+;; Optional argument MODULE is the targeted language's codename."
+;;   (when-let* ((module (or module (ts-docstr-module)))
+;;               (node (ts-docstr--module-funcall module "activate")))
+;;     node))
+
+(defun treesit-docstr-activatable-p (&optional module)
   "Return detected node, this means we can insert docstring at point.
 
 Optional argument MODULE is the targeted language's codename."
-  (when-let* ((module (or module (ts-docstr-module)))
+  (when-let* ((module (or module (treesit-docstr-module)))
               (node (ts-docstr--module-funcall module "activate")))
     node))
 
-(defun ts-docstr--process-events ()
-  "Process events, the entire core process to add document string."
-  (when-let* ((module (ts-docstr-module))
-              (node (ts-docstr-activatable-p module)))
+;; (defun ts-docstr--process-events ()
+;;   "Process events, the entire core process to add document string."
+;;   (when-let* ((module (ts-docstr-module))
+;;               (node (ts-docstr-activatable-p module)))
+;;     (ts-docstr--module-funcall module "insert" node
+;;                                (ts-docstr--module-funcall module "parse" node))))
+
+(defun treesit-docstr--process-events ()
+  "Process events, the entire core process to add docuemnt string."
+  (when-let* ((module (treesit-docstr-module))
+              (node (treesit-docstr-activatable-p module)))
     (ts-docstr--module-funcall module "insert" node
-                               (ts-docstr--module-funcall module "parse" node))))
+                               (ts-docstr-module-funcall module "parse" node))))
 
 ;;;###autoload
-(defun ts-docstr-at-point ()
+;; (defun ts-docstr-at-point ()
+;;   "Add document string at point."
+;;   (interactive)
+;;   (ts-docstr--ensure-ts
+;;     (if (ts-docstr--require-module) (ts-docstr--process-events)
+;;       (user-error "Language is either not supported or WIP... %s" major-mode))))
+
+;;;###autoload
+(defun treesit-docstr-at-point ()
   "Add document string at point."
   (interactive)
-  (ts-docstr--ensure-ts
-    (if (ts-docstr--require-module) (ts-docstr--process-events)
+  (treesit-docstr--ensure-ts
+    (if (treesit-docstr--require-module) (treesit-docstr--process-events)
       (user-error "Language is either not supported or WIP... %s" major-mode))))
 
 (cl-defun ts-docstr-format (desc-type &key typename variable)
