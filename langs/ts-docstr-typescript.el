@@ -29,8 +29,8 @@
 (defcustom ts-docstr-typescript-style 'typedoc
   "Style specification for document string in TypeScript."
   :type '(choice (const :tag "No specify" nil)
-                 (const :tag "TypeDoc" typedoc)
-                 (const :tag "TsDoc" tsdoc))
+          (const :tag "TypeDoc" typedoc)
+          (const :tag "TsDoc" tsdoc))
   :group 'ts-docstr)
 
 (defcustom ts-docstr-typescript-start "/**"
@@ -122,39 +122,75 @@
                  (ts-docstr-find-children-traverse node-sb "return_statement")))))
 
 ;;;###autoload
+;; (defun ts-docstr-typescript-parse (node)
+;;   "Parse declaration for TypeScript."
+;;   (ts-docstr-c-like-narrow-region
+;;     (if-let* ((params (ts-docstr-find-children node "formal_parameters"))
+;;               (parent (tsc-get-parent (nth 0 params))))
+;;         (let* ((node-method-or-function (tsc-node-type parent))
+;;                (is-method (eq node-method-or-function 'method_definition))
+;;                types variables)
+;;           (dolist (param params)
+;;             (tsc-mapc-children
+;;              (lambda (node)
+;;                (when (eq (tsc-node-type node) 'required_parameter)
+;;                  (tsc-traverse-mapc
+;;                   (lambda (child)  ; access `required_parameter' child
+;;                     (pcase (ts-docstr-2-str (tsc-node-type child))
+;;                       ((or "type_identifier" "predefined_type")
+;;                        (ts-docstr-push (tsc-node-text child) types))
+;;                       ("identifier"
+;;                        (unless is-method
+;;                          (ts-docstr-push ts-docstr-default-typename types))
+;;                        (ts-docstr-push (tsc-node-text child) variables))))
+;;                   node))
+;;                ;; Make sure the typenames and variables have the same length
+;;                (while (not (= (length types) (length variables)))
+;;                  ;; Add until they have the same length
+;;                  (if (< (length types) (length variables))
+;;                      (ts-docstr-push ts-docstr-default-typename types)
+;;                    (ts-docstr-push ts-docstr-default-variable variables))))
+;;              param))
+;;           (list :type types :variable variables
+;;                 :return (ts-docstr-typescript--parse-return params is-method)
+;;                 :name (ts-docstr-typescript--get-name node)))
+;;       (list :name (ts-docstr-typescript--get-name node)))))
+
+;;;###autoload
 (defun ts-docstr-typescript-parse (node)
-  "Parse declaration for TypeScript."
+  "Parse declaration for Typescript."
   (ts-docstr-c-like-narrow-region
-    (if-let* ((params (ts-docstr-find-children node "formal_parameters"))
-              (parent (tsc-get-parent (nth 0 params))))
-        (let* ((node-method-or-function (tsc-node-type parent))
-               (is-method (eq node-method-or-function 'method_definition))
+    (if-let* ((params (treesit-docstr-find-children node "formal_parameters"))
+              (parent (treesit-node-parent (nth 0 params))))
+        (let* ((node-method-or-function (treesit-node-type parent))
+               (is-method (string= node-method-or-function "method_definition"))
                types variables)
+          (message "isMethod %s" is-method)
           (dolist (param params)
-            (tsc-mapc-children
-             (lambda (node)
-               (when (eq (tsc-node-type node) 'required_parameter)
-                 (tsc-traverse-mapc
-                  (lambda (child)  ; access `required_parameter' child
-                    (pcase (ts-docstr-2-str (tsc-node-type child))
-                      ((or "type_identifier" "predefined_type")
-                       (ts-docstr-push (tsc-node-text child) types))
-                      ("identifier"
-                       (unless is-method
-                         (ts-docstr-push ts-docstr-default-typename types))
-                       (ts-docstr-push (tsc-node-text child) variables))))
-                  node))
-               ;; Make sure the typenames and variables have the same length
-               (while (not (= (length types) (length variables)))
-                 ;; Add until they have the same length
-                 (if (< (length types) (length variables))
-                     (ts-docstr-push ts-docstr-default-typename types)
-                   (ts-docstr-push ts-docstr-default-variable variables))))
-             param))
-          (list :type types :variable variables
-                :return (ts-docstr-typescript--parse-return params is-method)
-                :name (ts-docstr-typescript--get-name node)))
-      (list :name (ts-docstr-typescript--get-name node)))))
+            (message "param %s" param)
+            (mapc (lambda (node)
+                    (when (string= (treesit-node-type node) "required_parameter")
+                      ;; (message "here--- %s" node)
+                      (treesit-search-subtree node
+                                              (lambda (child)
+                                                (pcase (treesit-node-type child)
+                                                  ((or "type_identifier" "predefined_type")
+                                                   (ts-docstr-push (treesit-node-text child) types))
+                                                  ("identifier"
+                                                   (unless is-method
+                                                     (ts-docstr-push ts-docstr-default-typename types))
+                                                   (ts-docstr-push (treesit-node-text child) variables)))
+                                                nil))
+                      ;; Make sure the typenames and variables have the same length
+                      ;; (while (not (= (length types) (length variables)))
+                      ;;   ;; Add util they have the same length
+                      ;;   (if (< (length types) (length variables))
+                      ;;       (ts-docstr-push ts-docstr-default-typename types)
+                      ;;     (ts-docstr-push ts-docstr-default-variable variables)))
+                      ))
+                  (treesit-node-children param)))
+          (list :type types :variable variables))
+      (list :name "placeholder"))))
 
 (defun ts-docstr-typescript-config ()
   "Configure style according to variable `ts-docstr-typescript-style'."
@@ -182,7 +218,7 @@
 (defun ts-docstr-typescript-insert (node data)
   "Insert document string upon NODE and DATA."
   (ts-docstr-with-insert-indent
-    (cl-case (tsc-node-type node)
+    (cl-case (treesit-node-type node)
       ((or function_declaration method_definition)  ; For function
        (let* ((types (plist-get data :type))
               (variables (plist-get data :variable))

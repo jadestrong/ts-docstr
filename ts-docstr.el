@@ -193,6 +193,7 @@
   "Return t if NODE is leaf node."
   (zerop (tsc-count-children node)))
 
+
 ;; (defun ts-docstr-grab-nodes (nodes &optional node)
 ;;   "Grab a list NODES from current buffer.
 
@@ -261,17 +262,24 @@ node from the root."
   "Like function `tsc-get-next-sibling' but with TYPE (string)."
   (let ((next (tsc-get-next-sibling node)) found)
     (while (and next (not found))
-      (if (string= (ts-docstr-2-str (tsc-node-type next))
+      (if (string= (ts-docstr-2-str (treesit-node-type next))
                    (if (stringp type) type (ts-docstr-2-str type)))
           (setq found type)
         (setq next (tsc-get-next-sibling next))))
     next))
 
-(defun ts-docstr-children (node)
+;; (defun ts-docstr-children (node)
+;;   "Return children from NODE."
+;;   (let (children)
+;;     (dotimes (index (tsc-count-children node))
+;;       (ts-docstr-push (tsc-get-nth-child node index) children))
+;;     children))
+
+(defun treesit-docstr-children (node)
   "Return children from NODE."
   (let (children)
-    (dotimes (index (tsc-count-children node))
-      (ts-docstr-push (tsc-get-nth-child node index) children))
+    (dotimes (index (treesit-node-child-count node))
+      (ts-docstr-push (treesit-node-child node index) children))
     children))
 
 (defun ts-docstr-children-traverse (node)
@@ -282,12 +290,17 @@ node from the root."
 
 (defun ts-docstr--compare-type (node type)
   "Compare NODE's type to TYPE."
-  (string= (ts-docstr-2-str (tsc-node-type node)) type))
+  (string= (treesit-node-type node) type))
 
-(defun ts-docstr-find-children (node type)
+;; (defun ts-docstr-find-children (node type)
+;;   "Search node TYPE from children; this return a list."
+;;   (cl-remove-if-not (lambda (next) (ts-docstr--compare-type next type))
+;;                     (ts-docstr-children node)))
+
+(defun treesit-docstr-find-children (node type)
   "Search node TYPE from children; this return a list."
-  (cl-remove-if-not (lambda (next) (ts-docstr--compare-type next type))
-                    (ts-docstr-children node)))
+  (treesit-filter-child node
+                        (lambda (next) (string= (treesit-node-type next) type))))
 
 (defun ts-docstr-find-children-traverse (node type)
   "Like function `ts-docstr-find-children' but traverse it."
@@ -402,8 +415,10 @@ Optional argument MODULE is the targeted language's codename."
   "Process events, the entire core process to add docuemnt string."
   (when-let* ((module (treesit-docstr-module))
               (node (treesit-docstr-activatable-p module)))
-    (ts-docstr--module-funcall module "insert" node
-                               (ts-docstr-module-funcall module "parse" node))))
+    (message "result %s" (ts-docstr--module-funcall module "parse" node))
+    ;; (ts-docstr--module-funcall module "insert" node
+    ;;                            (ts-docstr--module-funcall module "parse" node))
+    ))
 
 ;;;###autoload
 ;; (defun ts-docstr-at-point ()
@@ -445,7 +460,7 @@ Optional argument MODULE is the targeted language's codename."
 (defmacro ts-docstr--setup-style (&rest body)
   "Set up the style data."
   (declare (indent 0) (debug t))
-  `(let* ((config (funcall (intern (format "%s-config" (ts-docstr-module)))))
+  `(let* ((config (funcall (intern (format "%s-config" (treesit-docstr-module)))))
           (c-start (plist-get config :start))
           (c-prefix (plist-get config :prefix))
           (c-end (plist-get config :end))
@@ -529,7 +544,7 @@ Optional argument MODULE is the targeted language's codename."
   "Narrow region to class/struct/function declaration."
   (declare (indent 0))
   `(save-restriction
-     (narrow-to-region (line-beginning-position) (line-end-position 2))
+     (narrow-to-region (line-beginning-position) (line-end-position 10))
      ,@body))
 
 ;;
@@ -538,7 +553,7 @@ Optional argument MODULE is the targeted language's codename."
 
 (defun ts-docstr-style ()
   "Return current style as a symbol."
-  (intern (format "%s-style" (ts-docstr-module))))
+  (intern (format "%s-style" (treesit-docstr-module))))
 
 ;;;###autoload
 (defmacro ts-docstr-save-current-style (&rest body)
