@@ -216,10 +216,6 @@ node from the root."
               (node (or node (treesit-buffer-root-node)))
               (patterns `(,(seq-mapcat (lambda (type) `(,(list type) @name)) nodes 'vector)))
               (query (treesit-query-compile language patterns)))
-    (message "patterns %s" (treesit-query-p patterns))
-    (message "node %s" node)
-    (message "query %s" query)
-    (message "result %s" (treesit-query-capture (treesit-buffer-root-node) "(function_declaration)"))
     ;; (treesit-query-validate (treesit-node-language node) query)
     (when-let* ((found-nodes (treesit-query-capture node query)))
       (mapcar #'cdr found-nodes))))
@@ -244,7 +240,6 @@ node from the root."
     ;; (message "beg %s end %s nodes %s" beg end nodes)
   (when-let ((beg (or beg (point-min))) (end (or end (point-max)))
              (nodes (treesit-docstr-grab-node nodes)))
-    (message "beg %s end %s nodes %s" beg end nodes)
     ;; (cl-remove-if-not (lambda (node)
     ;;                     (let ((node-beg (treesit-node-start node))
     ;;                           (node-end (treesit-node-end node)))
@@ -414,8 +409,10 @@ Optional argument MODULE is the targeted language's codename."
 (defun treesit-docstr--process-events ()
   "Process events, the entire core process to add docuemnt string."
   (when-let* ((module (treesit-docstr-module))
-              (node (treesit-docstr-activatable-p module)))
-    (message "result %s" (ts-docstr--module-funcall module "parse" node))
+              (node (treesit-docstr-activatable-p module))
+              (data (ts-docstr--module-funcall module "parse" node)))
+    (message "parse result %s" data)
+    (ts-docstr--module-funcall module "insert" node data)
     ;; (ts-docstr--module-funcall module "insert" node
     ;;                            (ts-docstr--module-funcall module "parse" node))
     ))
@@ -491,14 +488,16 @@ Optional argument MODULE is the targeted language's codename."
      ;;
      ;; This save us a lot of performance, but not sure if there are other
      ;; side effects.
-     (let (tree-sitter-tree)
-       ,@body)))
+     ,@body
+     ;; (let (tree-sitter-tree)
+     ;;   )
+     ))
 
 (defmacro ts-docstr-with-insert-indent (&rest body)
   "Execute BODY then indent region."
   (declare (indent 0) (debug t))
   `(ts-docstr--setup-insert-env
-     (indent-for-tab-command)
+     ;; (indent-for-tab-command)
      ,@body
      (msgu-silent (ignore-errors (indent-region (point-min) (point-max))))))
 

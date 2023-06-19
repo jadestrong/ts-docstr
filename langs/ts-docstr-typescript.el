@@ -162,31 +162,30 @@
   (ts-docstr-c-like-narrow-region
     (if-let* ((params (treesit-docstr-find-children node "formal_parameters"))
               (parent (treesit-node-parent (nth 0 params))))
-        (let* ((node-method-or-function (treesit-node-type parent))
-               (is-method (string= node-method-or-function "method_definition"))
+        (let* (
+               ;; (node-method-or-function (treesit-node-type parent))
+               ;; (is-method (string= node-method-or-function "method_definition"))
                types variables)
-          (message "isMethod %s" is-method)
           (dolist (param params)
-            (message "param %s" param)
             (mapc (lambda (node)
-                    (when (string= (treesit-node-type node) "required_parameter")
-                      ;; (message "here--- %s" node)
+                    (when (cl-member (treesit-node-type node) '("required_parameter" "optional_parameter") :test #'string=)
                       (treesit-search-subtree node
                                               (lambda (child)
+                                                (message "child type %s" (treesit-node-type child))
                                                 (pcase (treesit-node-type child)
                                                   ((or "type_identifier" "predefined_type")
                                                    (ts-docstr-push (treesit-node-text child) types))
                                                   ("identifier"
-                                                   (unless is-method
-                                                     (ts-docstr-push ts-docstr-default-typename types))
+                                                   ;; (unless is-method
+                                                   ;;   (ts-docstr-push ts-docstr-default-typename types))
                                                    (ts-docstr-push (treesit-node-text child) variables)))
                                                 nil))
                       ;; Make sure the typenames and variables have the same length
-                      ;; (while (not (= (length types) (length variables)))
-                      ;;   ;; Add util they have the same length
-                      ;;   (if (< (length types) (length variables))
-                      ;;       (ts-docstr-push ts-docstr-default-typename types)
-                      ;;     (ts-docstr-push ts-docstr-default-variable variables)))
+                      (while (not (= (length types) (length variables)))
+                        ;; Add util they have the same length
+                        (if (< (length types) (length variables))
+                            (ts-docstr-push ts-docstr-default-typename types)
+                          (ts-docstr-push ts-docstr-default-variable variables)))
                       ))
                   (treesit-node-children param)))
           (list :type types :variable variables))
@@ -215,11 +214,47 @@
              :return ts-docstr-typescript-format-return))))
 
 ;;;###autoload
+;; (defun ts-docstr-typescript-insert (node data)
+;;   "Insert document string upon NODE and DATA."
+;;   (ts-docstr-with-insert-indent
+;;     (cl-case (treesit-node-type node)
+;;       ((or function_declaration method_definition)  ; For function
+;;        (let* ((types (plist-get data :type))
+;;               (variables (plist-get data :variable))
+;;               (len (length variables)))
+;;          (ts-docstr-with-style-case
+;;            ((or typedoc tsdoc jsdoc google)
+;;             (ts-docstr-insert c-start "\n")
+;;             (ts-docstr-insert c-prefix (ts-docstr-format 'summary) "\n")
+;;             (setq restore-point (1- (point)))
+;;             (dotimes (index len)
+;;               (ts-docstr-insert c-prefix
+;;                                 (ts-docstr-format 'param
+;;                                                   :typename (nth index types)
+;;                                                   :variable (nth index variables))
+;;                                 "\n"))
+;;             (when (plist-get data :return)
+;;               (ts-docstr-insert c-prefix (ts-docstr-format 'return) "\n"))
+;;             (ts-docstr-insert c-end))
+;;            (t
+;;             (ts-docstr-custom-insertion node data)))))
+;;       ;; For the rest of the type, class/struct/enum
+;;       (t
+;;        (ts-docstr-with-style-case
+;;          ((or typedoc tsdoc jsdoc google)
+;;           (ts-docstr-insert c-start "\n")
+;;           (ts-docstr-insert c-prefix (ts-docstr-format 'summary) "\n")
+;;           (setq restore-point (1- (point)))
+;;           (ts-docstr-insert c-end))
+;;          (t
+;;           (ts-docstr-custom-insertion node data)))))))
+
+;;;###autoload
 (defun ts-docstr-typescript-insert (node data)
-  "Insert document string upon NODE and DATA."
+  "Insert docuement string upon NODE and DATA."
   (ts-docstr-with-insert-indent
-    (cl-case (treesit-node-type node)
-      ((or function_declaration method_definition)  ; For function
+    (cl-case (intern (treesit-node-type node))
+      (function_declaration ;; For function
        (let* ((types (plist-get data :type))
               (variables (plist-get data :variable))
               (len (length variables)))
@@ -229,26 +264,17 @@
             (ts-docstr-insert c-prefix (ts-docstr-format 'summary) "\n")
             (setq restore-point (1- (point)))
             (dotimes (index len)
-              (ts-docstr-insert c-prefix
-                                (ts-docstr-format 'param
-                                                  :typename (nth index types)
-                                                  :variable (nth index variables))
+              (ts-docstr-insert c-prefix (ts-docstr-format 'param
+                                                           :typename (nth index types)
+                                                           :variable (nth index variables))
                                 "\n"))
             (when (plist-get data :return)
               (ts-docstr-insert c-prefix (ts-docstr-format 'return) "\n"))
-            (ts-docstr-insert c-end))
-           (t
-            (ts-docstr-custom-insertion node data)))))
-      ;; For the rest of the type, class/struct/enum
+            (ts-docstr-insert c-end)
+            ))
+         ))
       (t
-       (ts-docstr-with-style-case
-         ((or typedoc tsdoc jsdoc google)
-          (ts-docstr-insert c-start "\n")
-          (ts-docstr-insert c-prefix (ts-docstr-format 'summary) "\n")
-          (setq restore-point (1- (point)))
-          (ts-docstr-insert c-end))
-         (t
-          (ts-docstr-custom-insertion node data)))))))
+       (message "default %s" node)))))
 
 (provide 'ts-docstr-typescript)
 ;;; ts-docstr-typescript.el ends here
